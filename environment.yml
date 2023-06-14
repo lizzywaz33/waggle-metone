@@ -1,4 +1,4 @@
-name: waggle_aqt
+name: waggle_dev
 channels:
   - conda-forge
   - defaults
