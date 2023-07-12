@@ -1,0 +1,15 @@
+name: "waggle-metone"
+description: "Captures & uploads particulate matter concentration from a MetOne ES-642 Dust Sensor data stream."
+version: "0.23.7.12"
+authors: "Elizabeth Wawrzyniak <ewawrzyniak@anl.gov>"
+collaborators: "Joe O'Brien <obrienj@anl.gov>"
+funding: "Community Research on Climate and Urban Science (CROCUS)"
+license: ""
+keywords: "meteorological"
+homepage: "https://github.com/lizzywaz33/waggle-metone/blob/main/README.md"
+source:
+  architectures:
+    - "linux/amd64"
+    - "linux/arm64"
+  url: "https://github.com/lizzywaz33/waggle-metone"
+  branch: "main"
