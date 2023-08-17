@@ -1,6 +1,20 @@
 import serial
 import argparse
 import parse
+import logging 
+from waggle.plugin import Plugin, get_timestamp 
+ 
+def parse_values(sample, **kwargs):
+	#the es642 outputs data in a fixed length string w/ leading zeroes if necessary. fields that can be negative are precedded with a +/-.	
+	data=sample.split(",") 
+	#convert to floats 
+	strip=[float(var) for var in data[:-1]]
+	strip.append(float(data[-1][1:]))
+	#zip names into a dictonary for ease of use
+	label=["mg/m^3", "lpm", "C", "RH", "mb", "ss", "sum"] 
+	ndict = dict(zip(label, strip))
+	return ndict
+
 import logging
  
 from waggle.plugin import Plugin, get_timestamp
@@ -41,6 +55,7 @@ def parse_values(sample, **kwargs):
     return ndict
 
 
+
 def start_publishing(args, plugin, dev, **kwargs):
     """
     start_publishing initializes the MetOne ES-642
@@ -59,6 +74,10 @@ def start_publishing(args, plugin, dev, **kwargs):
     """
     # Note: MetOne ASCII interface configuration described in manual
     line = dev.readline()
+    line = line.decode("utf-8")
+    # Note: MetOne ES-642 has 1 second data output, need to check if bytes are returned. 
+    # this is set at 2 to ignore partial readings that transmit as bytes.  
+    if len(line) == 40: 
     # Note: MetOne ES-642 has 1 second data output, need to check if bytes are returned
     if len(line) > 0: 
         # Define the timestamp
@@ -66,7 +85,19 @@ def start_publishing(args, plugin, dev, **kwargs):
         logging.debug("Read transmitted data")
         # Check for valid command
         sample = parse_values(line) 
-    
+	#add labels to the data
+        # If valid parsed values, send to publishing
+        # setup and publish to the node
+        if kwargs['node_interval'] > 0:
+             # publish each value in sample
+             for name, key in kwargs['names'].items(): 
+             	try:
+             		value = sample[key]
+             	except KeyError:
+                    continue
+                    # Update the log
+             if kwargs.get('debug', 'False'):
+                    print('node', timestamp, name, value, kwargs['units'][name], type(value))
         # If valid parsed values, send to publishing
         if sample:
             # setup and publish to the node
@@ -91,6 +122,20 @@ def start_publishing(args, plugin, dev, **kwargs):
                                    scope="node",
                                    timestamp=timestamp
                                    )
+        if kwargs['beehive_interval'] > 0:
+              # publish each value in sample
+            for name, key in kwargs['names'].items():
+                try:
+                    value = sample[key]
+                except KeyError:
+                    continue
+                  # Update the log
+                if kwargs.get('debug', 'False'):
+                    print('beehive', timestamp, name, value, kwargs['units'][name], type(value))
+                logging.info("beehive publishing %s %s units %s type %s", name, value, kwargs['units'][name], str(type(value)))
+                plugin.publish(name,
+                                 value=value,
+                                 meta={"units" : kwargs['units'][name],
             # setup and publish to the beehive                        
             if kwargs['beehive_interval'] > 0:
                 # publish each value in sample
@@ -110,10 +155,38 @@ def start_publishing(args, plugin, dev, **kwargs):
                                          "missing" : '-9999.9',
                                          "description" : kwargs['description'][name]
                                         },
-                                   scope="beehive",
-                                   timestamp=timestamp
+                                 scope="beehive",
+                                 timestamp=timestamp
                                   )
 
+def main(args):
+    names = {"dust.env.conc" : "mg/m^3",
+            "dust.env.flow" : "lpm",
+	    "dust.env.temperature" : "C",
+            "dust.env.humidity" : "RH",
+	    "dust.env.pressure": "mb",
+            "dust.env.status" : "ss",
+            "dust.particle.checksum" : "sum" 
+            }
+
+    units = {"dust.env.conc" : "concentration of particulate matter",
+             "dust.env.flow" : "liters per minute",
+             "dust.env.temperature" : "degrees celcius",
+             "dust.env.humidity" : "relative humidity of the sample",
+             "dust.env.pressure": "atmos pressure",
+             "dust.env.status" : "hexidecimal",
+             "dust.particle.checksum" : "sum of all digits before delim."
+
+             }
+    
+    description = {"dust.env.conc" : "total concentration of suspended particulate matter",
+                   "dust.env.flow" : "flow rate of the instrument",
+                   "dust.env.temperature" : "ambient temperature",
+                   "dust.env.humidity" : "relative humidity of the sample",
+                   "dust.env.pressure": "ambient pressure in millibars",
+                   "dust.env.status" : "indicator of status and error flags",
+                   "dust.particle.checksum" : "check sum of all digits before the asterisk"
+ 		              }
 def main(args):
     publish_names = {"es624.env.temp" : "T",
                      "es624.env.pressure" : "P",
@@ -138,7 +211,6 @@ def main(args):
                    "es624.house.datetime" : "UTC time in YYYY-MM-DDTHH:MM:SS format",
                    "es624.house.uptime" : "Time in seconds since instrument startup"
                   }
-
     with Plugin() as plugin, serial.Serial(args.device, baudrate=args.baud_rate, timeout=1.0) as dev:
         while True:
             try:
@@ -147,6 +219,7 @@ def main(args):
                                  dev,
                                  node_interval=args.node_interval,
                                  beehive_interval=args.beehive_interval,
+                                 names=names,
                                  names=publish_names,
                                  units=units,
                                  description=description
@@ -158,6 +231,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
+            description="Plugin for Pushing MetOne dust sensor TSP data through WSN")
             description="Plugin for Pushing Viasala WXT 2D anemometer data through WSN")
 
     parser.add_argument("--debug",
@@ -168,6 +242,7 @@ if __name__ == '__main__':
     parser.add_argument("--device",
                         type=str,
                         dest='device',
+                        default="/dev/ttyUSB2",
                         default="/dev/ttyUSB3",
                         help="serial device to use"
                         )
